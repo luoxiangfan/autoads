@@ -910,15 +910,15 @@ export default function Step3CampaignConfig({ offer, selectedCreative, selectedA
         </CardHeader>
         <CardContent>
           <div className="grid md:grid-cols-2 gap-4">
-            {/* Campaign Name - 使用统一命名规范 */}
+            {/* Campaign Name - 使用统一命名规范，用户可修改 */}
             <div className="space-y-2">
               <Label>
                 广告系列名称 (Campaign Name) <Badge variant="destructive" className="ml-1">必需</Badge>
-                <Badge variant="outline" className="ml-1">自动生成</Badge>
+                <Badge variant="outline" className="ml-1">可修改</Badge>
               </Label>
               <Input
                 value={config.campaignName}
-                readOnly
+                onChange={(e) => handleChange('campaignName', e.target.value)}
                 placeholder="例: Reolink_US_173_456_20260213123456789"
               />
             </div>
