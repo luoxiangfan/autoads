@@ -1102,6 +1102,8 @@ async function createCampaignBudget(
       params.deliveryMethod === 'STANDARD'
         ? enums.BudgetDeliveryMethod.STANDARD
         : enums.BudgetDeliveryMethod.ACCELERATED,
+    // 🔒 设置预算为独立预算（不共享），每个 Campaign 拥有独立的预算
+    explicitly_shared: false,
   }
 
   const response = await trackOAuthApiCall(

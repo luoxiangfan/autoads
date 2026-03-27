@@ -363,6 +363,8 @@ export async function createCampaignBudgetPython(params: {
       name: params.name,
       amount_micros: params.amountMicros,
       delivery_method: params.deliveryMethod,
+      // 🔒 设置预算为独立预算（不共享），每个 Campaign 拥有独立的预算
+      explicitly_shared: false,
     }, {
       headers: getPythonRequestHeaders(params.userId, params.requestId),
     })

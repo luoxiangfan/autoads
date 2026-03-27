@@ -854,6 +854,8 @@ async def create_campaign_budget(request: CreateCampaignBudgetRequest):
         budget.delivery_method = client.enums.BudgetDeliveryMethodEnum[
             request.delivery_method
         ]
+        # 🔒 设置预算为独立预算（不共享），每个 Campaign 拥有独立的预算
+        budget.explicitly_shared = False
 
         response = campaign_budget_service.mutate_campaign_budgets(
             customer_id=request.customer_id, operations=[operation]
