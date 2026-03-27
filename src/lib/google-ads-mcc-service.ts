@@ -416,12 +416,37 @@ export class GoogleAdsMCCService {
   }
 
   /**
-   * 获取用户的 MCC 绑定信息
+   * 获取用户的所有 MCC 绑定信息（支持一个用户绑定多个 MCC）
+   */
+  getUserMCCBindings(userId: number): (UserMCCBinding & { mcc_customer_id?: string })[] {
+    return this.db.prepare(`
+      SELECT umb.*, ma.mcc_customer_id
+      FROM user_mcc_bindings umb
+      LEFT JOIN mcc_accounts ma ON umb.mcc_account_id = ma.id
+      WHERE umb.user_id = ?
+      ORDER BY umb.created_at DESC
+    `).all(userId) as (UserMCCBinding & { mcc_customer_id?: string })[];
+  }
+
+  /**
+   * 获取用户的单个 MCC 绑定信息（向后兼容）
+   * @deprecated 使用 getUserMCCBindings 代替
    */
   getUserMCCBinding(userId: number): UserMCCBinding | null {
+    const bindings = this.getUserMCCBindings(userId);
+    return bindings.length > 0 ? bindings[0] : null;
+  }
+
+  /**
+   * 获取用户绑定的指定 MCC 账号信息
+   */
+  getUserMCCBindingByMCC(userId: number, mccAccountId: number): (UserMCCBinding & { mcc_customer_id?: string }) | null {
     return this.db.prepare(`
-      SELECT * FROM user_mcc_bindings WHERE user_id = ?
-    `).get(userId) as UserMCCBinding | null;
+      SELECT umb.*, ma.mcc_customer_id
+      FROM user_mcc_bindings umb
+      LEFT JOIN mcc_accounts ma ON umb.mcc_account_id = ma.id
+      WHERE umb.user_id = ? AND umb.mcc_account_id = ?
+    `).get(userId, mccAccountId) as (UserMCCBinding & { mcc_customer_id?: string }) | null;
   }
 
   /**
