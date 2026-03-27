@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react';
 import { MCCConfigForm } from '@/components/admin/MCCConfigForm';
 import { BatchImportUsers } from '@/components/admin/BatchImportUsers';
+import { MonitoringPanel } from '@/components/admin/MonitoringPanel';
 
 interface MCCAccount {
   id: number;
@@ -40,6 +41,7 @@ export default function MCCManagementPage() {
   const [showBindings, setShowBindings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'list' | 'monitoring'>('list');
 
   useEffect(() => {
     loadMCCAccounts();
@@ -135,6 +137,32 @@ export default function MCCManagementPage() {
 
       {/* 主内容区 */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* 视图切换选项卡 */}
+        <div className="mb-6 border-b border-gray-200">
+          <nav className="-mb-px flex space-x-4">
+            <button
+              onClick={() => setActiveView('list')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeView === 'list'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              📋 MCC 列表
+            </button>
+            <button
+              onClick={() => setActiveView('monitoring')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeView === 'monitoring'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              📊 授权监控面板
+            </button>
+          </nav>
+        </div>
+
         {/* 错误和成功提示 */}
         {error && (
           <div className="mb-6 rounded-md bg-red-50 p-4">
@@ -182,6 +210,10 @@ export default function MCCManagementPage() {
           </div>
         )}
 
+        {/* 视图内容 */}
+        {activeView === 'monitoring' ? (
+          <MonitoringPanel />
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* 左侧：MCC 列表 */}
           <div className="lg:col-span-1">
@@ -378,6 +410,7 @@ export default function MCCManagementPage() {
             )}
           </div>
         </div>
+        )}
       </main>
     </div>
   );
