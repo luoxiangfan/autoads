@@ -56,6 +56,7 @@ export function MonitoringPanel({ onRefresh }: MonitoringPanelProps) {
   const [data, setData] = useState<MonitoringData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'issues' | 'details'>('all');
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     try {
@@ -69,10 +70,43 @@ export function MonitoringPanel({ onRefresh }: MonitoringPanelProps) {
       }
       
       setData(result);
+      onRefresh?.();
     } catch (err: any) {
       setError(err.message || '加载失败');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefreshTokens = async () => {
+    if (!confirm('确定要刷新所有即将过期的 Token 吗？\n\n系统将自动刷新 24 小时内过期的 Token。')) {
+      return;
+    }
+
+    try {
+      setRefreshing(true);
+      const response = await fetch('/api/admin/google-ads-mcc/refresh-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expiryThresholdHours: 24,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || '刷新失败');
+      }
+
+      alert(`Token 刷新完成！\n\n成功：${result.result.successCount} 个\n失败：${result.result.failedCount} 个`);
+      
+      // 刷新监控数据
+      await loadData();
+    } catch (err: any) {
+      alert(`Token 刷新失败：${err.message}`);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -342,8 +376,15 @@ export function MonitoringPanel({ onRefresh }: MonitoringPanelProps) {
         </div>
       </div>
 
-      {/* 刷新按钮 */}
-      <div className="flex justify-end">
+      {/* 操作按钮 */}
+      <div className="flex justify-between items-center">
+        <button
+          onClick={handleRefreshTokens}
+          disabled={refreshing}
+          className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
+        >
+          {refreshing ? '🔄 刷新中...' : '⚡ 刷新即将过期的 Token'}
+        </button>
         <button
           onClick={loadData}
           className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50"

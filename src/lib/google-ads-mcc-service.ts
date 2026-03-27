@@ -681,6 +681,40 @@ export class GoogleAdsMCCService {
   // ==================== 配置变更处理 ====================
 
   /**
+   * 更新 MCC OAuth Token
+   */
+  updateMCCTokens(
+    mccId: number,
+    tokens: {
+      access_token: string;
+      refresh_token?: string;
+      expires_at: string;
+    }
+  ): void {
+    this.db.prepare(`
+      UPDATE mcc_accounts SET
+        mcc_access_token = ?,
+        mcc_refresh_token = ?,
+        mcc_token_expires_at = ?,
+        is_authorized = 1,
+        last_authorized_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      tokens.access_token,
+      tokens.refresh_token || null,
+      tokens.expires_at,
+      mccId
+    );
+
+    logger.info('mcc_tokens_updated', {
+      operation: 'updateMCCTokens',
+      mccId,
+      expiresAt: tokens.expires_at,
+    });
+  }
+
+  /**
    * 更新 MCC 配置（敏感字段变更会触发重新授权）
    */
   updateMCCConfig(
