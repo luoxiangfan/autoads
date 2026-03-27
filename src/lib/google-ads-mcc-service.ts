@@ -13,6 +13,7 @@ import Database from 'better-sqlite3';
 import { google } from 'googleapis';
 import crypto from 'crypto';
 import { logger } from './structured-logger';
+import { checkMCCAccess, applyTenantIsolation } from './mcc-tenant-isolation';
 
 export interface MCCAccount {
   id: number;
