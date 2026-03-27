@@ -40,10 +40,22 @@ export function MCCConfigForm({ onSuccess, existingMcc }: MCCConfigFormProps) {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/admin/google-ads-mcc', {
-        method: 'POST',
+      // 编辑模式 vs 新增模式
+      const url = existingMcc 
+        ? `/api/admin/google-ads-mcc/${existingMcc.id}`
+        : '/api/admin/google-ads-mcc';
+      
+      const method = existingMcc ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          mccCustomerId: formData.mccCustomerId,
+          oauthClientId: formData.oauthClientId,
+          oauthClientSecret: formData.oauthClientSecret,
+          developerToken: formData.developerToken,
+        }),
       });
 
       const data = await response.json();
@@ -52,7 +64,11 @@ export function MCCConfigForm({ onSuccess, existingMcc }: MCCConfigFormProps) {
         throw new Error(data.error || '保存失败');
       }
 
-      alert('MCC 配置已保存！请点击"启动 OAuth 授权"完成授权流程。');
+      const message = existingMcc 
+        ? 'MCC 配置已更新！' + (formData.oauthClientSecret ? '请重新授权' : '')
+        : 'MCC 配置已保存！请点击"启动 OAuth 授权"完成授权流程。';
+      
+      alert(message);
       
       // 清空敏感字段
       setFormData(prev => ({
@@ -106,11 +122,17 @@ export function MCCConfigForm({ onSuccess, existingMcc }: MCCConfigFormProps) {
           onChange={(e) => setFormData({ ...formData, mccCustomerId: e.target.value })}
           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           placeholder="1234567890"
-          disabled={!!existingMcc}
+          readOnly={!!existingMcc}
         />
-        <p className="mt-1 text-sm text-gray-500">
-          10 位数字的 MCC 账号 ID
-        </p>
+        {existingMcc ? (
+          <p className="mt-1 text-sm text-gray-500">
+            MCC Customer ID 不可修改，如需更改请删除后重新创建
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-gray-500">
+            10 位数字的 MCC 账号 ID
+          </p>
+        )}
       </div>
 
       <div>
@@ -203,17 +225,55 @@ export function MCCConfigForm({ onSuccess, existingMcc }: MCCConfigFormProps) {
         >
           {authorizing ? '生成中...' : '启动 OAuth 授权'}
         </button>
+
+        {existingMcc && !existingMcc.is_authorized && (
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm('确定要删除此 MCC 配置吗？')) {
+                fetch(`/api/admin/google-ads-mcc/${existingMcc.id}`, { method: 'DELETE' })
+                  .then(res => res.json())
+                  .then(data => {
+                    if (data.success) {
+                      alert('MCC 配置已删除');
+                      onSuccess?.();
+                      router.refresh();
+                    } else {
+                      alert('删除失败：' + (data.error || '未知错误'));
+                    }
+                  })
+                  .catch(err => alert('删除失败：' + err.message));
+              }
+            }}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+          >
+            删除配置
+          </button>
+        )}
       </div>
 
       <div className="mt-4 p-4 bg-gray-50 rounded-md">
         <h4 className="text-sm font-medium text-gray-900 mb-2">配置说明：</h4>
-        <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
-          <li>填写 MCC 账号信息和 OAuth 凭证</li>
-          <li>点击"保存配置"保存基本信息</li>
-          <li>点击"启动 OAuth 授权"跳转到 Google 授权页面</li>
-          <li>使用 MCC 账号登录并完成授权</li>
-          <li>授权完成后返回，状态将更新为"已授权"</li>
-        </ol>
+        {existingMcc ? (
+          <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
+            <li>修改 OAuth 凭证或 Developer Token</li>
+            <li>点击"更新配置"保存修改</li>
+            <li className={formData.oauthClientSecret || formData.developerToken ? 'text-red-600 font-medium' : ''}>
+              {formData.oauthClientSecret || formData.developerToken 
+                ? '⚠️ 敏感信息已修改，保存后需要重新授权' 
+                : '如未修改敏感信息，无需重新授权'}
+            </li>
+            <li>点击"启动 OAuth 授权"完成授权（如需要）</li>
+          </ol>
+        ) : (
+          <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
+            <li>填写 MCC 账号信息和 OAuth 凭证</li>
+            <li>点击"保存配置"保存基本信息</li>
+            <li>点击"启动 OAuth 授权"跳转到 Google 授权页面</li>
+            <li>使用 MCC 账号登录并完成授权</li>
+            <li>授权完成后返回，状态将更新为"已授权"</li>
+          </ol>
+        )}
       </div>
     </form>
   );
