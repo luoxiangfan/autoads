@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { MCCConfigForm } from '@/components/admin/MCCConfigForm';
+import { BatchImportUsers } from '@/components/admin/BatchImportUsers';
 
 interface MCCAccount {
   id: number;
@@ -291,12 +292,18 @@ export default function MCCManagementPage() {
                       MCC: {selectedMcc.mcc_customer_id}
                     </p>
                   </div>
-                  <a
-                    href={`/admin/users?mcc=${selectedMcc.id}`}
-                    className="text-sm text-blue-600 hover:text-blue-700"
-                  >
-                    + 绑定新用户
-                  </a>
+                  <div className="flex items-center gap-4">
+                    <BatchImportUsers
+                      mccAccountId={selectedMcc.id}
+                      onSuccess={() => loadBindings(selectedMcc.id)}
+                    />
+                    <a
+                      href={`/admin/users?mcc=${selectedMcc.id}`}
+                      className="text-sm text-blue-600 hover:text-blue-700"
+                    >
+                      + 绑定新用户
+                    </a>
+                  </div>
                 </div>
 
                 {bindings.length === 0 ? (

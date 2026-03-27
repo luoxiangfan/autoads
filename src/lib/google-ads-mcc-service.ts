@@ -274,6 +274,61 @@ export class GoogleAdsMCCService {
   }
 
   /**
+   * 批量绑定用户到 MCC 账号
+   * @returns Array of { userId, success, error? }
+   */
+  batchBindUsersToMCC(
+    mccAccountId: number,
+    users: Array<{ userId: number; customerId: string }>,
+    boundBy: number
+  ): Array<{ userId: number; success: boolean; error?: string }> {
+    // 验证 MCC 账号存在且已授权
+    const mcc = this.getMCCAccount(mccAccountId);
+    if (!mcc) {
+      throw new Error('MCC 账号不存在');
+    }
+    if (!mcc.is_authorized) {
+      throw new Error('MCC 账号未完成 OAuth 授权，请先完成授权');
+    }
+
+    const stmt = this.db.prepare(`
+      INSERT INTO user_mcc_bindings (
+        user_id, mcc_account_id, customer_id, bound_by, is_authorized
+      ) VALUES (?, ?, ?, ?, 0)
+      ON CONFLICT(user_id) DO UPDATE SET
+        mcc_account_id = excluded.mcc_account_id,
+        customer_id = excluded.customer_id,
+        bound_by = excluded.bound_by,
+        is_authorized = 0,
+        needs_reauth = 1,
+        user_refresh_token = NULL,
+        user_access_token = NULL,
+        updated_at = datetime('now')
+      `);
+
+    const results: Array<{ userId: number; success: boolean; error?: string }> = [];
+
+    // 使用事务确保原子性
+    const transaction = this.db.transaction((users: Array<{ userId: number; customerId: string }>) => {
+      for (const { userId, customerId } of users) {
+        try {
+          stmt.run(userId, mccAccountId, customerId.trim(), boundBy);
+          results.push({ userId, success: true });
+        } catch (error: any) {
+          results.push({ 
+            userId, 
+            success: false, 
+            error: error.message || '绑定失败' 
+          });
+        }
+      }
+    });
+
+    transaction(users);
+    return results;
+  }
+
+  /**
    * 获取用户的 MCC 绑定信息
    */
   getUserMCCBinding(userId: number): UserMCCBinding | null {
