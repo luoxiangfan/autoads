@@ -14,6 +14,7 @@ import { google } from 'googleapis';
 import crypto from 'crypto';
 import { logger } from './structured-logger';
 import { checkMCCAccess, applyTenantIsolation } from './mcc-tenant-isolation';
+import { logAudit } from './mcc-audit-log';
 
 export interface MCCAccount {
   id: number;
@@ -123,6 +124,19 @@ export class GoogleAdsMCCService {
         mccCustomerId: mccCustomerId.substring(0, 4) + '***',
         configuredBy,
         isUpdate: !!existing
+      });
+
+      // 记录审计日志
+      logAudit({
+        actionType: existing ? 'MCC_UPDATE' : 'MCC_CREATE',
+        resourceType: 'mcc_account',
+        resourceId: result.lastInsertRowid as number,
+        userId: configuredBy,
+        newValues: {
+          mccCustomerId: mccCustomerId.substring(0, 4) + '***',
+          oauthClientId: clientId.substring(0, 8) + '***',
+        },
+        status: 'success',
       });
 
       return result.lastInsertRowid as number;
@@ -308,7 +322,24 @@ export class GoogleAdsMCCService {
       `);
 
     const result = stmt.run(userId, mccAccountId, customerId.trim(), boundBy);
-    return result.lastInsertRowid as number;
+    const bindingId = result.lastInsertRowid as number;
+
+    // 记录审计日志
+    logAudit({
+      actionType: 'USER_BIND',
+      resourceType: 'user_binding',
+      resourceId: bindingId,
+      tenantId: mcc?.tenant_id || null,
+      userId: boundBy,
+      newValues: {
+        targetUserId: userId,
+        mccAccountId,
+        customerId: customerId.substring(0, 4) + '***',
+      },
+      status: 'success',
+    });
+
+    return bindingId;
   }
 
   /**
@@ -717,6 +748,8 @@ export class GoogleAdsMCCService {
       expires_at: string;
     }
   ): void {
+    const mcc = this.getMCCAccount(mccId);
+    
     this.db.prepare(`
       UPDATE mcc_accounts SET
         mcc_access_token = ?,
@@ -737,6 +770,19 @@ export class GoogleAdsMCCService {
       operation: 'updateMCCTokens',
       mccId,
       expiresAt: tokens.expires_at,
+    });
+
+    // 记录审计日志
+    logAudit({
+      actionType: 'MCC_TOKEN_REFRESH',
+      resourceType: 'mcc_account',
+      resourceId: mccId,
+      tenantId: mcc?.tenant_id || null,
+      userId: 0,  // 系统自动刷新
+      newValues: {
+        expiresAt: tokens.expires_at,
+      },
+      status: 'success',
     });
   }
 
