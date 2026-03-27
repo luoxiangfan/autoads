@@ -8,13 +8,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { GoogleAdsMCCService } from '@/lib/google-ads-mcc-service';
 import { getCurrentUser } from '@/lib/auth';
+import { logger } from '@/lib/structured-logger';
 
 const mccService = new GoogleAdsMCCService(getDb());
 
+/**
+ * 生成请求 ID 用于追踪
+ */
+function generateRequestId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 export async function GET(request: NextRequest) {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const user = await getCurrentUser();
     if (!user || user.role !== 'admin') {
+      logger.warn('mcc_get_unauthorized', { 
+        requestId, 
+        userId: user?.id,
+        role: user?.role,
+        durationMs: Date.now() - startTime 
+      });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
@@ -32,20 +49,46 @@ export async function GET(request: NextRequest) {
       updated_at: acc.updated_at,
     }));
 
+    logger.info('mcc_get_success', { 
+      requestId,
+      userId: user.id,
+      count: sanitizedAccounts.length,
+      durationMs: Date.now() - startTime 
+    });
+
     return NextResponse.json({ mccAccounts: sanitizedAccounts });
-  } catch (error) {
-    console.error('Error fetching MCC accounts:', error);
+  } catch (error: any) {
+    logger.error('mcc_get_error', { 
+      requestId,
+      error: error.message || String(error),
+      stack: error.stack,
+      durationMs: Date.now() - startTime 
+    });
+    
     return NextResponse.json(
-      { error: 'Failed to fetch MCC accounts' },
+      { 
+        error: '获取 MCC 账号列表失败',
+        requestId,
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      },
       { status: 500 }
     );
   }
 }
 
 export async function POST(request: NextRequest) {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+  
   try {
     const user = await getCurrentUser();
     if (!user || user.role !== 'admin') {
+      logger.warn('mcc_post_unauthorized', { 
+        requestId, 
+        userId: user?.id,
+        role: user?.role,
+        durationMs: Date.now() - startTime 
+      });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
@@ -58,38 +101,101 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // 验证必填字段
-    if (!mccCustomerId || !oauthClientId || !oauthClientSecret || !developerToken) {
+    const missingFields: string[] = [];
+    if (!mccCustomerId) missingFields.push('mccCustomerId');
+    if (!oauthClientId) missingFields.push('oauthClientId');
+    if (!oauthClientSecret) missingFields.push('oauthClientSecret');
+    if (!developerToken) missingFields.push('developerToken');
+
+    if (missingFields.length > 0) {
+      logger.warn('mcc_post_validation_failed', { 
+        requestId,
+        userId: user.id,
+        missingFields,
+        durationMs: Date.now() - startTime 
+      });
       return NextResponse.json(
-        { error: '缺少必填字段' },
+        { 
+          error: '缺少必填字段',
+          missingFields,
+          requestId
+        },
         { status: 400 }
       );
     }
 
     // 验证 MCC Customer ID 格式（10 位数字）
     if (!/^\d{10}$/.test(mccCustomerId.trim())) {
+      logger.warn('mcc_post_invalid_format', { 
+        requestId,
+        userId: user.id,
+        field: 'mccCustomerId',
+        value: mccCustomerId.substring(0, 4) + '***',
+        durationMs: Date.now() - startTime 
+      });
       return NextResponse.json(
-        { error: 'MCC Customer ID 必须是 10 位数字' },
+        { 
+          error: 'MCC Customer ID 格式不正确',
+          details: '必须是 10 位数字（不含连字符）',
+          requestId
+        },
+        { status: 400 }
+      );
+    }
+
+    // 验证 OAuth Client ID 格式
+    if (!oauthClientId.includes('.apps.googleusercontent.com')) {
+      logger.warn('mcc_post_invalid_oauth_client', { 
+        requestId,
+        userId: user.id,
+        durationMs: Date.now() - startTime 
+      });
+      return NextResponse.json(
+        { 
+          error: 'OAuth Client ID 格式不正确',
+          details: '应该是 xxx.apps.googleusercontent.com 格式',
+          requestId
+        },
         { status: 400 }
       );
     }
 
     const mccId = mccService.saveMCCConfig(
-      mccCustomerId,
-      oauthClientId,
-      oauthClientSecret,
-      developerToken,
+      mccCustomerId.trim(),
+      oauthClientId.trim(),
+      oauthClientSecret.trim(),
+      developerToken.trim(),
       user.id
     );
+
+    logger.info('mcc_post_success', { 
+      requestId,
+      userId: user.id,
+      mccId,
+      mccCustomerId: mccCustomerId.substring(0, 4) + '***',
+      durationMs: Date.now() - startTime 
+    });
 
     return NextResponse.json({ 
       success: true, 
       mccId,
-      message: 'MCC 配置已保存，请进行 OAuth 授权'
+      message: 'MCC 配置已保存，请进行 OAuth 授权',
+      requestId
     });
-  } catch (error) {
-    console.error('Error saving MCC config:', error);
+  } catch (error: any) {
+    logger.error('mcc_post_error', { 
+      requestId,
+      error: error.message || String(error),
+      stack: error.stack,
+      durationMs: Date.now() - startTime 
+    });
+    
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to save MCC config' },
+      { 
+        error: '保存 MCC 配置失败',
+        details: error.message || (process.env.NODE_ENV === 'development' ? String(error) : undefined),
+        requestId
+      },
       { status: 500 }
     );
   }

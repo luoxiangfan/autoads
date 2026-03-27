@@ -12,6 +12,7 @@
 import Database from 'better-sqlite3';
 import { google } from 'googleapis';
 import crypto from 'crypto';
+import { logger } from './structured-logger';
 
 export interface MCCAccount {
   id: number;
@@ -75,29 +76,65 @@ export class GoogleAdsMCCService {
     developerToken: string,
     configuredBy: number
   ): number {
-    const stmt = this.db.prepare(`
-      INSERT INTO mcc_accounts (
-        mcc_customer_id, oauth_client_id, oauth_client_secret, 
-        developer_token, configured_by, is_authorized
-      ) VALUES (?, ?, ?, ?, ?, 0)
-      ON CONFLICT(mcc_customer_id) DO UPDATE SET
-        oauth_client_id = excluded.oauth_client_id,
-        oauth_client_secret = excluded.oauth_client_secret,
-        developer_token = excluded.developer_token,
-        configured_by = excluded.configured_by,
-        updated_at = datetime('now'),
-        is_authorized = 0,
-        mcc_refresh_token = NULL,
-        mcc_access_token = NULL
-      `);
+    try {
+      // 验证 MCC Customer ID 是否已存在
+      const existing = this.db.prepare(`
+        SELECT id, is_authorized FROM mcc_accounts WHERE mcc_customer_id = ?
+      `).get(mccCustomerId.trim()) as { id: number; is_authorized: number } | undefined;
 
-    const result = stmt.run(
-      mccCustomerId.trim(),
-      clientId.trim(),
-      clientSecret.trim(),
-      developerToken.trim(),
-      configuredBy
-    );
+      if (existing) {
+        logger.warn('mcc_config_update', {
+          operation: 'saveMCCConfig',
+          mccCustomerId: mccCustomerId.substring(0, 4) + '***',
+          existingId: existing.id,
+          wasAuthorized: existing.is_authorized === 1,
+          configuredBy
+        });
+      }
+
+      const stmt = this.db.prepare(`
+        INSERT INTO mcc_accounts (
+          mcc_customer_id, oauth_client_id, oauth_client_secret, 
+          developer_token, configured_by, is_authorized
+        ) VALUES (?, ?, ?, ?, ?, 0)
+        ON CONFLICT(mcc_customer_id) DO UPDATE SET
+          oauth_client_id = excluded.oauth_client_id,
+          oauth_client_secret = excluded.oauth_client_secret,
+          developer_token = excluded.developer_token,
+          configured_by = excluded.configured_by,
+          updated_at = datetime('now'),
+          is_authorized = 0,
+          mcc_refresh_token = NULL,
+          mcc_access_token = NULL
+        `);
+
+      const result = stmt.run(
+        mccCustomerId.trim(),
+        clientId.trim(),
+        clientSecret.trim(),
+        developerToken.trim(),
+        configuredBy
+      );
+
+      logger.info('mcc_config_saved', {
+        operation: 'saveMCCConfig',
+        mccId: result.lastInsertRowid,
+        mccCustomerId: mccCustomerId.substring(0, 4) + '***',
+        configuredBy,
+        isUpdate: !!existing
+      });
+
+      return result.lastInsertRowid as number;
+    } catch (error: any) {
+      logger.error('mcc_config_save_error', {
+        operation: 'saveMCCConfig',
+        mccCustomerId: mccCustomerId.substring(0, 4) + '***',
+        configuredBy,
+        error: error.message || String(error)
+      });
+      throw error;
+    }
+  }
 
     return result.lastInsertRowid as number;
   }
@@ -282,50 +319,100 @@ export class GoogleAdsMCCService {
     users: Array<{ userId: number; customerId: string }>,
     boundBy: number
   ): Array<{ userId: number; success: boolean; error?: string }> {
-    // 验证 MCC 账号存在且已授权
-    const mcc = this.getMCCAccount(mccAccountId);
-    if (!mcc) {
-      throw new Error('MCC 账号不存在');
-    }
-    if (!mcc.is_authorized) {
-      throw new Error('MCC 账号未完成 OAuth 授权，请先完成授权');
-    }
-
-    const stmt = this.db.prepare(`
-      INSERT INTO user_mcc_bindings (
-        user_id, mcc_account_id, customer_id, bound_by, is_authorized
-      ) VALUES (?, ?, ?, ?, 0)
-      ON CONFLICT(user_id) DO UPDATE SET
-        mcc_account_id = excluded.mcc_account_id,
-        customer_id = excluded.customer_id,
-        bound_by = excluded.bound_by,
-        is_authorized = 0,
-        needs_reauth = 1,
-        user_refresh_token = NULL,
-        user_access_token = NULL,
-        updated_at = datetime('now')
-      `);
-
-    const results: Array<{ userId: number; success: boolean; error?: string }> = [];
-
-    // 使用事务确保原子性
-    const transaction = this.db.transaction((users: Array<{ userId: number; customerId: string }>) => {
-      for (const { userId, customerId } of users) {
-        try {
-          stmt.run(userId, mccAccountId, customerId.trim(), boundBy);
-          results.push({ userId, success: true });
-        } catch (error: any) {
-          results.push({ 
-            userId, 
-            success: false, 
-            error: error.message || '绑定失败' 
-          });
-        }
+    const startTime = Date.now();
+    
+    try {
+      // 验证 MCC 账号存在且已授权
+      const mcc = this.getMCCAccount(mccAccountId);
+      if (!mcc) {
+        logger.error('mcc_batch_bind_account_not_found', {
+          operation: 'batchBindUsersToMCC',
+          mccAccountId,
+          boundBy
+        });
+        throw new Error(`MCC 账号不存在 (ID: ${mccAccountId})`);
       }
-    });
+      if (!mcc.is_authorized) {
+        logger.error('mcc_batch_bind_not_authorized', {
+          operation: 'batchBindUsersToMCC',
+          mccAccountId,
+          mccCustomerId: mcc.mcc_customer_id,
+          boundBy
+        });
+        throw new Error(`MCC 账号 ${mcc.mcc_customer_id} 未完成 OAuth 授权，请先完成授权`);
+      }
 
-    transaction(users);
-    return results;
+      logger.info('mcc_batch_bind_start', {
+        operation: 'batchBindUsersToMCC',
+        mccAccountId,
+        mccCustomerId: mcc.mcc_customer_id,
+        userCount: users.length,
+        boundBy
+      });
+
+      const stmt = this.db.prepare(`
+        INSERT INTO user_mcc_bindings (
+          user_id, mcc_account_id, customer_id, bound_by, is_authorized
+        ) VALUES (?, ?, ?, ?, 0)
+        ON CONFLICT(user_id) DO UPDATE SET
+          mcc_account_id = excluded.mcc_account_id,
+          customer_id = excluded.customer_id,
+          bound_by = excluded.bound_by,
+          is_authorized = 0,
+          needs_reauth = 1,
+          user_refresh_token = NULL,
+          user_access_token = NULL,
+          updated_at = datetime('now')
+        `);
+
+      const results: Array<{ userId: number; success: boolean; error?: string }> = [];
+
+      // 使用事务确保原子性
+      const transaction = this.db.transaction((users: Array<{ userId: number; customerId: string }>) => {
+        for (const { userId, customerId } of users) {
+          try {
+            stmt.run(userId, mccAccountId, customerId.trim(), boundBy);
+            results.push({ userId, success: true });
+          } catch (error: any) {
+            logger.warn('mcc_batch_bind_user_failed', {
+              userId,
+              mccAccountId,
+              error: error.message || String(error)
+            });
+            results.push({ 
+              userId, 
+              success: false, 
+              error: error.message || '绑定失败' 
+            });
+          }
+        }
+      });
+
+      transaction(users);
+
+      const successCount = results.filter(r => r.success).length;
+      const failedCount = results.filter(r => !r.success).length;
+
+      logger.info('mcc_batch_bind_complete', {
+        operation: 'batchBindUsersToMCC',
+        mccAccountId,
+        userCount: users.length,
+        successCount,
+        failedCount,
+        durationMs: Date.now() - startTime
+      });
+
+      return results;
+    } catch (error: any) {
+      logger.error('mcc_batch_bind_error', {
+        operation: 'batchBindUsersToMCC',
+        mccAccountId,
+        userCount: users.length,
+        error: error.message || String(error),
+        durationMs: Date.now() - startTime
+      });
+      throw error;
+    }
   }
 
   /**
