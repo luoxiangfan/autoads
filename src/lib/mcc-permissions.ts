@@ -90,6 +90,7 @@ export async function checkPermission(
   }
 
   // 1. 检查直接授予的权限
+  const nowFunc = db.type === 'postgres' ? 'NOW()' : "datetime('now')";
   const directPermission = db.queryOne(`
     SELECT up.*, mp.permission_code
     FROM user_permissions up
@@ -98,7 +99,7 @@ export async function checkPermission(
       AND mp.permission_code = ?
       AND (up.tenant_id = ? OR (? IS NULL AND up.tenant_id IS NULL))
       AND (up.mcc_account_id = ? OR (? IS NULL AND up.mcc_account_id IS NULL))
-      AND (up.expires_at IS NULL OR up.expires_at > datetime('now'))
+      AND (up.expires_at IS NULL OR up.expires_at > ${nowFunc})
   `, [userId, permissionCode, tenantId, tenantId, mccAccountId, mccAccountId]) as any;
 
   if (directPermission) {
@@ -258,15 +259,16 @@ export function grantPermission(
     throw new Error(`权限不存在：${permissionCode}`);
   }
 
+  const nowFunc = db.type === 'postgres' ? 'NOW()' : "datetime('now')";
   const result = db.exec(`
     INSERT INTO user_permissions (
       user_id, permission_id, tenant_id, mcc_account_id, granted_by, expires_at,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ${nowFunc}, ${nowFunc})
     ON CONFLICT(user_id, permission_id, tenant_id, mcc_account_id) DO UPDATE SET
       granted_by = excluded.granted_by,
       expires_at = excluded.expires_at,
-      updated_at = datetime('now')
+      updated_at = ${nowFunc}
   `, [userId, permission.id, tenantId || null, mccAccountId || null, grantedBy, expiresAt || null]);
 
   logger.info('permission_granted', {

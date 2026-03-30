@@ -8,6 +8,7 @@
  */
 
 import { getDb } from './db';
+import { getNowFunction } from './db-helpers';
 import { logger } from './structured-logger';
 
 const db = getDb();
@@ -105,6 +106,9 @@ export function logAudit(
   } = params;
 
   try {
+    const nowFunc = db.type === 'postgres' ? 'NOW()' : "datetime('now')";
+    const placeholder = db.type === 'postgres' ? '$16' : '?';
+    
     const result = db.exec(`
       INSERT INTO mcc_audit_logs (
         action_type, resource_type, resource_id, tenant_id,
@@ -113,7 +117,7 @@ export function logAudit(
         request_id, ip_address, user_agent,
         status, error_message,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${placeholder})
     `, [
       actionType,
       resourceType,
@@ -130,6 +134,7 @@ export function logAudit(
       userAgent,
       status,
       errorMessage,
+      nowFunc,
     ]);
 
     const logId = result.lastInsertRowid as number;

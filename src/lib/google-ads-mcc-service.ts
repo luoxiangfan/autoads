@@ -94,6 +94,7 @@ export class GoogleAdsMCCService {
         });
       }
 
+      const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
       const stmt = this.db.prepare(`
         INSERT INTO mcc_accounts (
           mcc_customer_id, oauth_client_id, oauth_client_secret, 
@@ -104,7 +105,7 @@ export class GoogleAdsMCCService {
           oauth_client_secret = excluded.oauth_client_secret,
           developer_token = excluded.developer_token,
           configured_by = excluded.configured_by,
-          updated_at = datetime('now'),
+          updated_at = ${nowFunc},
           is_authorized = 0,
           mcc_refresh_token = NULL,
           mcc_access_token = NULL
@@ -209,6 +210,7 @@ export class GoogleAdsMCCService {
     );
 
     const { tokens } = await oauth2Client.getToken(code);
+    const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
     
     this.db.prepare(`
       UPDATE mcc_accounts SET
@@ -216,8 +218,8 @@ export class GoogleAdsMCCService {
         mcc_access_token = ?,
         mcc_token_expires_at = ?,
         is_authorized = 1,
-        last_authorized_at = datetime('now'),
-        updated_at = datetime('now')
+        last_authorized_at = ${nowFunc},
+        updated_at = ${nowFunc}
       WHERE id = ?
     `).run(
       tokens.refresh_token || null,
@@ -270,13 +272,14 @@ export class GoogleAdsMCCService {
     }
 
     // 标记所有关联用户需要重新授权
+    const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
     this.db.prepare(`
       UPDATE user_mcc_bindings SET
         is_authorized = 0,
         needs_reauth = 1,
         user_refresh_token = NULL,
         user_access_token = NULL,
-        updated_at = datetime('now')
+        updated_at = ${nowFunc}
       WHERE mcc_account_id = ?
     `).run(mccId);
 
@@ -306,11 +309,13 @@ export class GoogleAdsMCCService {
       throw new Error('MCC 账号未完成 OAuth 授权，请先完成授权');
     }
 
+    const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
+    const conflictColumn = this.db.type === 'postgres' ? 'user_id, mcc_account_id, customer_id' : 'user_id';
     const stmt = this.db.prepare(`
       INSERT INTO user_mcc_bindings (
         user_id, mcc_account_id, customer_id, bound_by, is_authorized
       ) VALUES (?, ?, ?, ?, 0)
-      ON CONFLICT(user_id) DO UPDATE SET
+      ON CONFLICT(${conflictColumn}) DO UPDATE SET
         mcc_account_id = excluded.mcc_account_id,
         customer_id = excluded.customer_id,
         bound_by = excluded.bound_by,
@@ -318,7 +323,7 @@ export class GoogleAdsMCCService {
         needs_reauth = 1,
         user_refresh_token = NULL,
         user_access_token = NULL,
-        updated_at = datetime('now')
+        updated_at = ${nowFunc}
       `);
 
     const result = stmt.run(userId, mccAccountId, customerId.trim(), boundBy);
@@ -382,11 +387,13 @@ export class GoogleAdsMCCService {
         boundBy
       });
 
+      const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
+      const conflictColumn = this.db.type === 'postgres' ? 'user_id, mcc_account_id, customer_id' : 'user_id';
       const stmt = this.db.prepare(`
         INSERT INTO user_mcc_bindings (
           user_id, mcc_account_id, customer_id, bound_by, is_authorized
         ) VALUES (?, ?, ?, ?, 0)
-        ON CONFLICT(user_id) DO UPDATE SET
+        ON CONFLICT(${conflictColumn}) DO UPDATE SET
           mcc_account_id = excluded.mcc_account_id,
           customer_id = excluded.customer_id,
           bound_by = excluded.bound_by,
@@ -394,7 +401,7 @@ export class GoogleAdsMCCService {
           needs_reauth = 1,
           user_refresh_token = NULL,
           user_access_token = NULL,
-          updated_at = datetime('now')
+          updated_at = ${nowFunc}
         `);
 
       const results: Array<{ userId: number; success: boolean; error?: string }> = [];
@@ -498,12 +505,13 @@ export class GoogleAdsMCCService {
    * 解除用户绑定
    */
   unbindUser(userId: number): void {
+    const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
     this.db.prepare(`
       UPDATE user_mcc_bindings SET
         is_authorized = 0,
         needs_reauth = 1,
         user_refresh_token = NULL,
-        updated_at = datetime('now')
+        updated_at = ${nowFunc}
       WHERE user_id = ?
     `).run(userId);
   }
@@ -578,6 +586,7 @@ export class GoogleAdsMCCService {
     );
 
     const { tokens } = await oauth2Client.getToken(code);
+    const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
     
     this.db.prepare(`
       UPDATE user_mcc_bindings SET
@@ -586,8 +595,8 @@ export class GoogleAdsMCCService {
         user_token_expires_at = ?,
         is_authorized = 1,
         needs_reauth = 0,
-        last_authorized_at = datetime('now'),
-        updated_at = datetime('now')
+        last_authorized_at = ${nowFunc},
+        updated_at = ${nowFunc}
       WHERE user_id = ?
     `).run(
       tokens.refresh_token || null,
@@ -721,12 +730,13 @@ export class GoogleAdsMCCService {
     });
 
     const { credentials } = await oauth2Client.refreshAccessToken();
+    const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
     
     this.db.prepare(`
       UPDATE user_mcc_bindings SET
         user_access_token = ?,
         user_token_expires_at = ?,
-        updated_at = datetime('now')
+        updated_at = ${nowFunc}
       WHERE user_id = ?
     `).run(
       credentials.access_token || null,
@@ -749,6 +759,7 @@ export class GoogleAdsMCCService {
     }
   ): void {
     const mcc = this.getMCCAccount(mccId);
+    const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
     
     this.db.prepare(`
       UPDATE mcc_accounts SET
@@ -756,8 +767,8 @@ export class GoogleAdsMCCService {
         mcc_refresh_token = ?,
         mcc_token_expires_at = ?,
         is_authorized = 1,
-        last_authorized_at = datetime('now'),
-        updated_at = datetime('now')
+        last_authorized_at = ${nowFunc},
+        updated_at = ${nowFunc}
       WHERE id = ?
     `).run(
       tokens.access_token,
@@ -811,7 +822,8 @@ export class GoogleAdsMCCService {
       updateFields.push('mcc_token_expires_at = NULL');
     }
 
-    updateFields.push("updated_at = datetime('now')");
+    const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
+    updateFields.push(`updated_at = ${nowFunc}`);
     values.push(mccId);
 
     this.db.prepare(`
@@ -820,13 +832,14 @@ export class GoogleAdsMCCService {
 
     // 如果敏感字段被修改，标记所有关联用户需要重新授权
     if (hasSensitiveUpdate) {
+      const nowFunc = this.db.type === 'postgres' ? 'NOW()' : "datetime('now')";
       this.db.prepare(`
         UPDATE user_mcc_bindings SET
           is_authorized = 0,
           needs_reauth = 1,
           user_refresh_token = NULL,
           user_access_token = NULL,
-          updated_at = datetime('now')
+          updated_at = ${nowFunc}
         WHERE mcc_account_id = ?
       `).run(mccId);
     }
