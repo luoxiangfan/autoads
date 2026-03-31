@@ -31,8 +31,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    // 获取用户绑定的 MCC 账号下的服务账号
-    // 或者全局可用的服务账号
+    // 普通用户：只能获取自己绑定的 MCC 账号下的服务账号
     const serviceAccounts = db.query(`
       SELECT DISTINCT
         ma.id,
@@ -40,19 +39,15 @@ export async function GET(request: NextRequest) {
         ma.service_account_email,
         ma.service_account_id,
         ma.auth_type,
-        CASE 
-          WHEN umb.user_id = ? THEN 1
-          ELSE 0
-        END as is_bound
+        1 as is_bound
       FROM mcc_accounts ma
-      LEFT JOIN user_mcc_bindings umb ON ma.id = umb.mcc_account_id AND umb.user_id = ?
+      INNER JOIN user_mcc_bindings umb ON ma.id = umb.mcc_account_id
       WHERE ma.auth_type = 'service_account'
         AND ma.is_active = 1
-        AND (umb.user_id = ? OR ma.id IN (
-          SELECT mcc_account_id FROM user_mcc_bindings WHERE user_id = ?
-        ))
+        AND umb.user_id = ?
+        AND umb.is_authorized = ${db.type === 'postgres' ? 'TRUE' : '1'}
       ORDER BY ma.created_at DESC
-    `, [user.id, user.id, user.id, user.id]) as Array<{
+    `, [user.id]) as Array<{
       id: number;
       mcc_customer_id: string;
       service_account_email: string;
