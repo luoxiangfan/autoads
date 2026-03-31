@@ -5,12 +5,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
-import { getCurrentUser } from '@/lib/auth';
+import { getDatabase } from '@/lib/db';
+import { withAuth } from '@/lib/auth';
 import { logger } from '@/lib/structured-logger';
 import crypto from 'crypto';
 
-const db = getDb();
+const db = getDatabase();
 
 /**
  * 生成请求 ID 用于追踪
@@ -37,13 +37,12 @@ function hashServiceAccountKey(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex');
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request: NextRequest, user) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
-    const user = await getCurrentUser();
-    if (!user || user.role !== 'admin') {
+    if (user.role !== 'admin') {
       logger.warn('service_accounts_get_unauthorized', { 
         requestId, 
         userId: user?.id,
@@ -127,13 +126,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withAuth(async (request: NextRequest, user) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
-    const user = await getCurrentUser();
-    if (!user || user.role !== 'admin') {
+    if (user.role !== 'admin') {
       logger.warn('service_accounts_post_unauthorized', { 
         requestId, 
         userId: user?.id,

@@ -4,11 +4,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
-import { getCurrentUser } from '@/lib/auth';
+import { getDatabase } from '@/lib/db';
+import { withAuth } from '@/lib/auth';
 import { logger } from '@/lib/structured-logger';
 
-const db = getDb();
+const db = getDatabase();
 
 /**
  * 生成请求 ID 用于追踪
@@ -17,12 +17,11 @@ function generateRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request: NextRequest, user) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
-    const user = await getCurrentUser();
     if (!user) {
       logger.warn('user_service_accounts_unauthorized', { 
         requestId, 

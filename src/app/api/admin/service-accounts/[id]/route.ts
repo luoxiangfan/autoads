@@ -4,11 +4,11 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
-import { getCurrentUser } from '@/lib/auth';
+import { getDatabase } from '@/lib/db';
+import { withAuth } from '@/lib/auth';
 import { logger } from '@/lib/structured-logger';
 
-const db = getDb();
+const db = getDatabase();
 
 /**
  * 生成请求 ID 用于追踪
@@ -17,16 +17,12 @@ function generateRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const DELETE = withAuth(async (request: NextRequest, user, context) => {
   const requestId = generateRequestId();
   const startTime = Date.now();
   
   try {
-    const user = await getCurrentUser();
-    if (!user || user.role !== 'admin') {
+    if (user.role !== 'admin') {
       logger.warn('service_account_delete_unauthorized', { 
         requestId, 
         userId: user?.id,
@@ -35,7 +31,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    const serviceAccountId = parseInt(params.id);
+    const params = context?.params || {};
+    const serviceAccountId = parseInt(params.id || '-1');
     if (isNaN(serviceAccountId)) {
       logger.warn('service_account_delete_invalid_id', { 
         requestId, 
