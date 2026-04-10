@@ -35,8 +35,7 @@ import {
   AlertCircle,
   ShieldCheck,
   ShieldAlert,
-  Info,
-  Braces
+  Info
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -636,7 +635,7 @@ export default function PromptsManagementPage() {
                               {validating ? (
                                 <Loader2 className="w-3 h-3 animate-spin mr-1" />
                               ) : (
-                                <Braces className="w-3 h-3 mr-1" />
+                                <Code2 className="w-3 h-3 mr-1" />
                               )}
                               验证变量
                             </Button>
@@ -653,7 +652,7 @@ export default function PromptsManagementPage() {
                           <div className="border border-slate-200 rounded-lg p-4 bg-slate-50">
                             <div className="flex items-center justify-between mb-3">
                               <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                                <Braces className="w-4 h-4 text-indigo-600" />
+                                <Code2 className="w-4 h-4 text-indigo-600" />
                                 模板变量分析
                               </h4>
                               <Button
