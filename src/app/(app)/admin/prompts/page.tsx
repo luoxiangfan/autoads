@@ -32,7 +32,11 @@ import {
   Edit2,
   Save,
   X,
-  AlertCircle
+  AlertCircle,
+  Variable,
+  ShieldCheck,
+  ShieldAlert,
+  Info
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -113,6 +117,11 @@ export default function PromptsManagementPage() {
   const [inlineEditContent, setInlineEditContent] = useState('')
   const [inlineChangeNotes, setInlineChangeNotes] = useState('')
   const [inlineSaving, setInlineSaving] = useState(false)
+
+  // 变量验证相关状态
+  const [validating, setValidating] = useState(false)
+  const [validationResult, setValidationResult] = useState<any>(null)
+  const [showValidation, setShowValidation] = useState(false)
 
   // 加载 Prompts 列表
   useEffect(() => {
@@ -337,6 +346,40 @@ export default function PromptsManagementPage() {
     setInlineEditId(null)
     setInlineEditContent('')
     setInlineChangeNotes('')
+  }
+
+  // ========== 变量验证功能 ==========
+
+  // 验证 Prompt 变量
+  const validatePromptVariables = async (content: string) => {
+    try {
+      setValidating(true)
+      const response = await fetch('/api/admin/prompts/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptContent: content })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setValidationResult(result.data)
+        setShowValidation(true)
+      } else {
+        toast.error(result.error || '验证失败')
+      }
+    } catch (error) {
+      console.error('验证失败:', error)
+      toast.error('验证失败')
+    } finally {
+      setValidating(false)
+    }
+  }
+
+  // 清空验证结果
+  const clearValidation = () => {
+    setValidationResult(null)
+    setShowValidation(false)
   }
 
   // 保存内联编辑
@@ -581,13 +624,145 @@ export default function PromptsManagementPage() {
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-medium text-slate-700 mb-1 block">Prompt 内容</label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-xs font-medium text-slate-700">Prompt 内容</label>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => validatePromptVariables(inlineEditContent)}
+                              disabled={validating}
+                              className="h-7 text-xs"
+                            >
+                              {validating ? (
+                                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                              ) : (
+                                <Variable className="w-3 h-3 mr-1" />
+                              )}
+                              验证变量
+                            </Button>
+                          </div>
                           <Textarea
                             value={inlineEditContent}
                             onChange={(e) => setInlineEditContent(e.target.value)}
                             className="font-mono text-xs min-h-[300px] whitespace-pre"
                           />
                         </div>
+
+                        {/* 变量验证结果面板 */}
+                        {showValidation && validationResult && (
+                          <div className="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                                <Variable className="w-4 h-4 text-indigo-600" />
+                                模板变量分析
+                              </h4>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={clearValidation}
+                                className="h-7"
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+
+                            {/* 统计信息 */}
+                            <div className="grid grid-cols-4 gap-3 mb-4">
+                              <div className="bg-white p-3 rounded border border-slate-200">
+                                <div className="text-xs text-slate-500">总变量数</div>
+                                <div className="text-lg font-bold text-slate-900">
+                                  {validationResult.stats.total}
+                                </div>
+                              </div>
+                              <div className="bg-white p-3 rounded border border-slate-200">
+                                <div className="text-xs text-slate-500">唯一变量</div>
+                                <div className="text-lg font-bold text-slate-900">
+                                  {validationResult.stats.unique}
+                                </div>
+                              </div>
+                              <div className="bg-white p-3 rounded border border-slate-200">
+                                <div className="text-xs text-slate-500">必需变量</div>
+                                <div className="text-lg font-bold text-indigo-600">
+                                  {validationResult.stats.required}
+                                </div>
+                              </div>
+                              <div className="bg-white p-3 rounded border border-slate-200">
+                                <div className="text-xs text-slate-500">可选变量</div>
+                                <div className="text-lg font-bold text-emerald-600">
+                                  {validationResult.stats.optional}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 问题提示 */}
+                            {validationResult.analysis.issues.length > 0 && (
+                              <div className="mb-4 space-y-2">
+                                {validationResult.analysis.issues.map((issue: any, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    className={`flex items-start gap-2 p-2 rounded text-xs ${
+                                      issue.type === 'error'
+                                        ? 'bg-red-50 text-red-800 border border-red-200'
+                                        : issue.type === 'warning'
+                                        ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                        : 'bg-blue-50 text-blue-800 border border-blue-200'
+                                    }`}
+                                  >
+                                    {issue.type === 'error' ? (
+                                      <ShieldAlert className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                    ) : issue.type === 'warning' ? (
+                                      <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                    ) : (
+                                      <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                    )}
+                                    <span>{issue.message}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* 变量列表 */}
+                            <div className="space-y-3">
+                              <div>
+                                <h5 className="text-xs font-medium text-slate-700 mb-2 flex items-center gap-1">
+                                  <ShieldCheck className="w-3 h-3 text-indigo-600" />
+                                  必需变量 ({validationResult.analysis.required.length})
+                                </h5>
+                                <div className="flex flex-wrap gap-2">
+                                  {validationResult.analysis.required.map((varName: string) => (
+                                    <Badge
+                                      key={varName}
+                                      variant="outline"
+                                      className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200"
+                                    >
+                                      {varName}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {validationResult.analysis.optional.length > 0 && (
+                                <div>
+                                  <h5 className="text-xs font-medium text-slate-700 mb-2 flex items-center gap-1">
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    可选变量 ({validationResult.analysis.optional.length})
+                                  </h5>
+                                  <div className="flex flex-wrap gap-2">
+                                    {validationResult.analysis.optional.map((varName: string) => (
+                                      <Badge
+                                        key={varName}
+                                        variant="outline"
+                                        className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      >
+                                        {varName}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       /* 只读模式 */
