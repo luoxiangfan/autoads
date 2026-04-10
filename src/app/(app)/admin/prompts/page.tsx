@@ -100,13 +100,19 @@ export default function PromptsManagementPage() {
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
-  // 编辑模式相关状态
+  // 编辑模式相关状态（弹窗内）
   const [editMode, setEditMode] = useState(false)
   const [editedContent, setEditedContent] = useState('')
   const [newVersion, setNewVersion] = useState('')
   const [changeNotes, setChangeNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [predictedNextVersion, setPredictedNextVersion] = useState('')  // 预测的下一个版本号
+
+  // 列表内联编辑状态
+  const [inlineEditId, setInlineEditId] = useState<number | null>(null)
+  const [inlineEditContent, setInlineEditContent] = useState('')
+  const [inlineChangeNotes, setInlineChangeNotes] = useState('')
+  const [inlineSaving, setInlineSaving] = useState(false)
 
   // 加载 Prompts 列表
   useEffect(() => {
@@ -292,6 +298,74 @@ export default function PromptsManagementPage() {
     setPredictedNextVersion('')
   }
 
+  // ========== 内联编辑功能 ==========
+
+  // 开始内联编辑
+  const startInlineEdit = async (prompt: PromptData) => {
+    try {
+      setLoadingDetail(true)
+      // 加载完整 Prompt 内容
+      const response = await fetch(`/api/admin/prompts/${prompt.promptId}`)
+      const result = await response.json()
+
+      if (result.success) {
+        setInlineEditId(prompt.id)
+        setInlineEditContent(result.data.currentVersion.promptContent)
+        setInlineChangeNotes('')
+      } else {
+        toast.error('加载 Prompt 内容失败')
+      }
+    } catch (error) {
+      console.error('加载 Prompt 内容失败:', error)
+      toast.error('加载 Prompt 内容失败')
+    } finally {
+      setLoadingDetail(false)
+    }
+  }
+
+  // 取消内联编辑
+  const cancelInlineEdit = () => {
+    setInlineEditId(null)
+    setInlineEditContent('')
+    setInlineChangeNotes('')
+  }
+
+  // 保存内联编辑
+  const saveInlineEdit = async (prompt: PromptData) => {
+    if (!inlineEditContent.trim()) {
+      toast.error('Prompt 内容不能为空')
+      return
+    }
+
+    try {
+      setInlineSaving(true)
+      const response = await fetch(`/api/admin/prompts/${prompt.promptId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          promptContent: inlineEditContent,
+          changeNotes: inlineChangeNotes,
+          isActive: true,
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        toast.success(`新版本 ${result.data.version} 创建成功`)
+        cancelInlineEdit()
+        await loadPrompts()
+      } else {
+        toast.error(result.error || '保存失败')
+      }
+    } catch (error) {
+      console.error('保存失败:', error)
+      toast.error('保存失败')
+    } finally {
+      setInlineSaving(false)
+    }
+  }
+
   // 复制内容
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text)
@@ -450,32 +524,66 @@ export default function PromptsManagementPage() {
                     </div>
                   </div>
 
-                  {/* Prompt Preview */}
+                  {/* Prompt Preview / Edit */}
                   <div className="relative">
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                      <div className="flex items-start justify-between mb-2">
-                        <span className="text-xs font-medium text-slate-500 uppercase">Prompt 预览</span>
-                        <button
-                          onClick={() => handleCopy(prompt.promptPreview, `preview-${prompt.id}`)}
-                          className="flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600 transition-colors"
-                        >
-                          {copiedId === `preview-${prompt.id}` ? (
-                            <>
-                              <Check className="w-3 h-3" />
-                              已复制
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3 h-3" />
-                              复制
-                            </>
-                          )}
-                        </button>
+                    {inlineEditId === prompt.id ? (
+                      /* 编辑模式 */
+                      <div className="space-y-3">
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600" />
+                            <p className="text-sm font-medium text-amber-800">正在编辑：{prompt.name}</p>
+                          </div>
+                          <div className="text-xs text-amber-700">
+                            当前版本：<span className="font-mono">{prompt.version}</span> → 
+                            新版本将自动保存为历史版本
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-700 mb-1 block">变更说明</label>
+                          <Input
+                            value={inlineChangeNotes}
+                            onChange={(e) => setInlineChangeNotes(e.target.value)}
+                            placeholder="描述本次修改的主要内容..."
+                            className="text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-700 mb-1 block">Prompt 内容</label>
+                          <Textarea
+                            value={inlineEditContent}
+                            onChange={(e) => setInlineEditContent(e.target.value)}
+                            className="font-mono text-xs min-h-[300px] whitespace-pre"
+                          />
+                        </div>
                       </div>
-                      <p className="text-sm text-slate-700 font-mono leading-relaxed line-clamp-3">
-                        {prompt.promptPreview}
-                      </p>
-                    </div>
+                    ) : (
+                      /* 只读模式 */
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <span className="text-xs font-medium text-slate-500 uppercase">Prompt 预览</span>
+                          <button
+                            onClick={() => handleCopy(prompt.promptPreview, `preview-${prompt.id}`)}
+                            className="flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600 transition-colors"
+                          >
+                            {copiedId === `preview-${prompt.id}` ? (
+                              <>
+                                <Check className="w-3 h-3" />
+                                已复制
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                复制
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <p className="text-sm text-slate-700 font-mono leading-relaxed line-clamp-3">
+                          {prompt.promptPreview}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -494,6 +602,45 @@ export default function PromptsManagementPage() {
                       )}
                       查看完整 Prompt
                     </Button>
+                    {inlineEditId === prompt.id ? (
+                      <>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => saveInlineEdit(prompt)}
+                          disabled={inlineSaving}
+                          className="flex items-center gap-2"
+                        >
+                          {inlineSaving ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Save className="w-4 h-4" />
+                          )}
+                          保存
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={cancelInlineEdit}
+                          disabled={inlineSaving}
+                          className="flex items-center gap-2"
+                        >
+                          <X className="w-4 h-4" />
+                          取消
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => startInlineEdit(prompt)}
+                        disabled={loadingDetail}
+                        className="flex items-center gap-2"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        编辑
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
