@@ -190,6 +190,9 @@ export async function PUT(
       }
 
       // 5. 插入新版本（其他版本自动成为历史版本）
+      // 自动更新 name 字段中的版本号（如 "广告创意生成 v4.0" → "广告创意生成 v4.1"）
+      const newName = name || currentVersion.name.replace(/v\d+(\.\d+)*$/i, newVersion)
+      
       const result = await db.exec(
         `INSERT INTO prompt_versions
          (prompt_id, version, category, name, description, file_path, function_name,
@@ -199,7 +202,7 @@ export async function PUT(
           promptId,
           newVersion,
           category || currentVersion.category,
-          name || currentVersion.name,
+          newName,
           description || currentVersion.description,
           currentVersion.file_path,
           currentVersion.function_name,

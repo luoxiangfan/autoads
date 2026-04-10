@@ -197,11 +197,20 @@ export default function PromptsManagementPage() {
 
     try {
       setSaving(true)
+      // 计算新 name（更新版本号部分）
+      const currentVer = selectedPrompt.currentVersion.version
+      const nextVer = predictedNextVersion || currentVer
+      const newName = selectedPrompt.name.replace(
+        new RegExp(currentVer.replace(/\./g, '\\.') + '$'),
+        nextVer
+      )
+      
       const response = await fetch(`/api/admin/prompts/${selectedPrompt.promptId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           // 不传 version，由后端自动计算
+          name: newName,  // 传入更新后的 name
           promptContent: editedContent,
           changeNotes: changeNotes,
           isActive: true,  // 自动激活新版本
@@ -339,10 +348,33 @@ export default function PromptsManagementPage() {
 
     try {
       setInlineSaving(true)
+      // 计算新 name（更新版本号部分）
+      // 从 prompt.version 计算下一个版本号
+      const versionMatch = prompt.version.match(/^v?(\d+(?:\.\d+)*)/i)
+      let nextVersion = prompt.version
+      if (versionMatch) {
+        const parts = versionMatch[1].split('.').map(Number)
+        parts[parts.length - 1] += 1
+        // 处理进位
+        for (let i = parts.length - 1; i >= 0; i--) {
+          if (parts[i] >= 10 && i > 0) {
+            parts[i] = 0
+            parts[i - 1] += 1
+          }
+        }
+        nextVersion = `v${parts.join('.')}`
+      }
+      
+      const newName = prompt.name.replace(
+        new RegExp(prompt.version.replace(/\./g, '\\.') + '$'),
+        nextVersion
+      )
+      
       const response = await fetch(`/api/admin/prompts/${prompt.promptId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          name: newName,  // 传入更新后的 name
           promptContent: inlineEditContent,
           changeNotes: inlineChangeNotes,
           isActive: true,
@@ -352,7 +384,7 @@ export default function PromptsManagementPage() {
       const result = await response.json()
 
       if (result.success) {
-        toast.success(`新版本 ${result.data.version} 创建成功`)
+        toast.success(`新版本 ${result.data.version} 创建成功，名称已更新为：${newName}`)
         cancelInlineEdit()
         await loadPrompts()
       } else {
