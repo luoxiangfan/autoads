@@ -1178,6 +1178,39 @@ export async function POST(request: NextRequest) {
       ])
 
       const campaignId = getInsertedId(campaignInsert, db.type)
+      
+      // 🔥 新增 (2026-04-27): 创建广告系列时自动备份
+      try {
+        const { createCampaignBackup, BackupType } = await import('@/lib/campaign-backup')
+        const campaignForBackup = {
+          id: campaignId,
+          user_id: userId,
+          offer_id: _offerId,
+          google_ads_account_id: resolvedGoogleAdsAccountId,
+          campaign_name: resolvedCampaignName,
+          budget_amount: variantBudget,
+          budget_type: normalizedBudgetType,
+          max_cpc: persistedMaxCpc,
+          status: 'PAUSED',
+          creation_status: 'pending',
+          ad_creative_id: creative.id,
+          campaign_config: JSON.stringify(normalizedCampaignConfig),
+          pause_old_campaigns: _pauseOldCampaigns ? 1 : 0,
+          is_test_variant: _enableSmartOptimization ? 1 : 0,
+          traffic_allocation: trafficAllocations[i],
+        }
+        
+        const backupId = await createCampaignBackup(
+          campaignForBackup,
+          BackupType.AUTO_CREATED,
+          '广告系列创建时自动备份'
+        )
+        console.log(`✅ 广告系列 #${campaignId} 备份创建成功 ID: ${backupId}`)
+      } catch (backupError: any) {
+        console.warn(`⚠️ 广告系列 #${campaignId} 备份失败:`, backupError.message)
+        // 备份失败不阻断主流程
+      }
+      
       createdCampaigns.push({
         campaignId,
         creative,

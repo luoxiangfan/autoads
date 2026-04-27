@@ -120,6 +120,7 @@ export interface CampaignPublishTaskData {
   // 可选标志
   enableCampaignImmediately?: boolean  // 是否立即启用Campaign
   pauseOldCampaigns?: boolean          // 是否暂停旧Campaign
+  fromBackupId?: number                // 🔥 新增 (2026-04-27): 如果是从备份发布，记录备份 ID
 }
 
 /**
@@ -1070,7 +1071,22 @@ export async function executeCampaignPublish(
         console.warn(`⚠️ 发布后兜底暂停失败（不影响本地下线状态）: ${pauseError?.message || pauseError}`)
       }
       apiSuccess = true
-      return { success: true, googleCampaignId, googleAdGroupId, googleAdId }
+
+    // 🔥 新增 (2026-04-27): 如果是从备份发布，更新备份状态为 published
+    const backupId = task.data.fromBackupId
+    if (backupId) {
+      try {
+        const { updateBackupPublishStatus, PublishStatus } = await import('@/lib/campaign-backup')
+        await updateBackupPublishStatus(backupId, userId, PublishStatus.PUBLISHED, {
+          publishedCampaignId: campaignId
+        })
+        console.log(`✅ 备份 #${backupId} 状态已更新为 published`)
+      } catch (backupUpdateError: any) {
+        console.warn(`⚠️ 更新备份状态失败 (backupId=${backupId}):`, backupUpdateError.message)
+      }
+    }
+
+    return { success: true, googleCampaignId, googleAdGroupId, googleAdId }
     }
 
     // 本地名称与远端保持一致（同时同步campaign_config.campaignName）
@@ -1232,6 +1248,20 @@ export async function executeCampaignPublish(
       console.error(`❌ 更新campaign状态失败: ${dbError.message}`)
     }
 
+    // 🔥 新增 (2026-04-27): 如果是从备份发布，更新备份状态为 failed
+    const backupId = task.data.fromBackupId
+    if (backupId) {
+      try {
+        const { updateBackupPublishStatus, PublishStatus } = await import('@/lib/campaign-backup')
+        await updateBackupPublishStatus(backupId, userId, PublishStatus.FAILED, {
+          publishError: apiErrorMessage
+        })
+        console.log(`❌ 备份 #${backupId} 状态已更新为 failed`)
+      } catch (backupUpdateError: any) {
+        console.warn(`⚠️ 更新备份状态失败 (backupId=${backupId}):`, backupUpdateError.message)
+      }
+    }
+
     return {
       success: false,
       error: apiErrorMessage
@@ -1257,3 +1287,6 @@ export async function executeCampaignPublish(
     }
   }
 }
+
+// 🔥 新增 (2026-04-27): 如果是从备份发布，更新备份状态
+// 注意：这个函数需要在 return 之前调用
